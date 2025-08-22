@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitVault Backup Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.0/FileSaver.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* -- Animations -- */
+        .card-enter {
+            animation: slide-in 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+        }
+        .logo-glow {
+            animation: glow 2.5s ease-in-out infinite;
+        }
+        @keyframes slide-in {
+            0% {
+                transform: translateX(-100px);
+                opacity: 0;
+            }
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        @keyframes glow {
+            0%, 100% { text-shadow: 0 0 5px rgba(239, 68, 68, 0.5); }
+            50% { text-shadow: 0 0 20px rgba(239, 68, 68, 1); }
+        }
+
+        /* -- Animated Spinner -- */
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 4px solid #4a5568; /* border-gray-700 */
+            border-radius: 50%;
+            display: inline-block;
+            position: relative;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+        .spinner::after {
+            content: '';  
+            box-sizing: border-box;
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 4px solid;
+            border-color: #ef4444 transparent; /* border-red-500 */
+        }
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* -- Toast Notification -- */
+        .toast {
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.5s, visibility 0.5s, transform 0.5s;
+            transform: translateY(20px);
+        }
+        .toast.show {
+            visibility: visible;
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* -- Hide Scrollbar for Log -- */
+        #status {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        #status::-webkit-scrollbar {
+            display: none; /* Chrome, Safari, and Opera */
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4 overflow-hidden">
+    <div id="main-card" class="w-full max-w-2xl mx-auto bg-gray-800 rounded-2xl shadow-2xl p-8 md:p-12 relative card-enter">
+        
+        <!-- Settings Icon Button -->
+        <button id="toggle-settings" class="absolute top-6 right-6 p-2 rounded-full text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+        </button>
+
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-100">Git<span class="text-red-500 logo-glow">Vault</span></h1>
+            <p class="text-gray-400 mt-2">Backup all your repositories into a single zip file.</p>
+        </div>
+
+        <!-- Settings Section (Collapsible) -->
+        <div id="settings-content" class="hidden mb-8">
+            <div class="flex flex-col md:flex-row items-stretch gap-4">
+                <input type="password" id="github-token" class="flex-grow bg-gray-700 text-white border-2 border-gray-600 rounded-lg px-4 py-3 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter your GitHub Personal Access Token">
+                <button id="save-token" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500">
+                    Save Token
+                </button>
+            </div>
+             <p class="text-sm text-gray-500 mt-3">
+                <span class="font-bold">Note:</span> Your token is saved only in your browser's local storage. Ensure you have `repo` scope permissions.
+            </p>
+        </div>
+
+        <!-- Backup Section -->
+        <div class="mb-8">
+            <button id="start-backup" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-lg text-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                Start Backup
+            </button>
+        </div>
+
+        <!-- Status Section -->
+        <div id="status-container" class="mt-8 p-6 bg-gray-900 rounded-lg hidden">
+             <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center">
+                    <div id="spinner" class="spinner mr-4 hidden"></div>
+                    <h3 class="text-xl font-semibold text-gray-200">Backup Progress</h3>
+                </div>
+                <button id="copy-log" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-blue-500">
+                    Copy Log
+                </button>
+            </div>
+            <div id="status" class="text-gray-400 font-mono text-sm max-h-64 overflow-y-auto bg-gray-900 p-2 rounded"></div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast fixed bottom-5 left-1/2 -translate-x-1/2 bg-green-600 text-white py-3 px-6 rounded-lg shadow-lg">
+        <p id="toast-message"></p>
+    </div>
+
+    <script>
+        // DOM element references
+        const tokenInput = document.getElementById('github-token');
+        const saveTokenBtn = document.getElementById('save-token');
+        const startBackupBtn = document.getElementById('start-backup');
+        const statusContainer = document.getElementById('status-container');
+        const statusDiv = document.getElementById('status');
+        const spinner = document.getElementById('spinner');
+        const copyLogBtn = document.getElementById('copy-log');
+        const toast = document.getElementById('toast');
+        const toastMessage = document.getElementById('toast-message');
+        const toggleSettingsBtn = document.getElementById('toggle-settings');
+        const settingsContent = document.getElementById('settings-content');
+
+        // CORS Proxy to bypass browser security restrictions
+        const PROXY_URL = 'https://corsproxy.io/?';
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedToken = localStorage.getItem('githubToken');
+            if (savedToken) {
+                tokenInput.value = savedToken;
+            }
+            // Remove the glow animation after it runs once to be less distracting
+            setTimeout(() => {
+                document.querySelector('.logo-glow').classList.remove('logo-glow');
+            }, 2500);
+        });
+
+        // Toggle settings visibility
+        toggleSettingsBtn.addEventListener('click', () => {
+            settingsContent.classList.toggle('hidden');
+        });
+
+        saveTokenBtn.addEventListener('click', () => {
+            const token = tokenInput.value;
+            if (token) {
+                localStorage.setItem('githubToken', token);
+                logStatus('SUCCESS: GitHub token saved.', 'green');
+                showToast('Token saved successfully!');
+                // Auto-collapse settings after saving
+                settingsContent.classList.add('hidden');
+            } else {
+                logStatus('ERROR: Please enter a token before saving.', 'red');
+            }
+        });
+
+        copyLogBtn.addEventListener('click', () => {
+            const logText = statusDiv.innerText;
+            if (logText) {
+                const textArea = document.createElement("textarea");
+                textArea.value = logText;
+                textArea.style.position = "fixed";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    copyLogBtn.textContent = 'Copied!';
+                    setTimeout(() => { copyLogBtn.textContent = 'Copy Log'; }, 2000);
+                } catch (err) {
+                    showToast('Failed to copy log.', 'red');
+                }
+                document.body.removeChild(textArea);
+            } else {
+                 showToast('Log is empty.', 'yellow');
+            }
+        });
+
+        startBackupBtn.addEventListener('click', async () => {
+            const token = tokenInput.value;
+            if (!token) {
+                logStatus('ERROR: GitHub token is missing. Please add and save it first.', 'red');
+                statusContainer.classList.remove('hidden');
+                if (settingsContent.classList.contains('hidden')) {
+                    settingsContent.classList.remove('hidden');
+                }
+                return;
+            }
+
+            startBackupBtn.disabled = true;
+            startBackupBtn.textContent = 'Backing up...';
+            statusContainer.classList.remove('hidden');
+            spinner.classList.remove('hidden');
+            statusDiv.innerHTML = '';
+
+            try {
+                logStatus('Fetching repository list...');
+                const repos = await fetchAllRepos(token);
+                logStatus(`Found ${repos.length} repositories.`);
+
+                if (repos.length === 0) {
+                    logStatus('No repositories found to back up.');
+                    resetUI();
+                    return;
+                }
+
+                const zip = new JSZip();
+                let downloadedCount = 0;
+                for (let i = 0; i < repos.length; i++) {
+                    const repo = repos[i];
+                    logStatus(`[${i + 1}/${repos.length}] Downloading '${repo.name}'...`);
+                    
+                    try {
+                        const zipballUrl = `${repo.url}/zipball`;
+                        const repoZipBlob = await fetchWithRetry(() => fetchBinary(zipballUrl, token), 3, 1000);
+                        
+                        zip.file(`${repo.name}.zip`, repoZipBlob);
+                        downloadedCount++;
+                    } catch (error) {
+                        logStatus(`ERROR: Failed to download ${repo.name} after multiple attempts. Skipping. Reason: ${error.message}`, 'red');
+                    }
+                }
+
+                if (downloadedCount > 0) {
+                    logStatus('All available repositories added. Generating final backup file...');
+                    const content = await zip.generateAsync({ type: 'blob' });
+                    const date = new Date().toISOString().slice(0, 10);
+                    const fileName = `github-backup-${date}.zip`;
+                    saveAs(content, fileName);
+                    logStatus(`SUCCESS: Backup complete! Download of ${fileName} should start shortly.`, 'green');
+                    showToast(`Download started: ${fileName}`);
+                } else {
+                    logStatus('WARNING: No repositories could be downloaded. The zip file will be empty.', 'yellow');
+                    showToast('Backup failed: No repositories were downloaded.', 'red');
+                }
+
+            } catch (error) {
+                logStatus(`FATAL ERROR: ${error.message}`, 'red');
+                console.error(error);
+            } finally {
+                resetUI();
+            }
+        });
+        
+        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+        async function fetchWithRetry(fn, retries, delayMs) {
+            let lastError;
+            for (let i = 0; i < retries; i++) {
+                try {
+                    return await fn();
+                } catch (error) {
+                    lastError = error;
+                    logStatus(`   -> Attempt ${i + 1} failed. Retrying in ${delayMs / 1000}s...`, 'yellow');
+                    await delay(delayMs);
+                }
+            }
+            throw lastError;
+        }
+        
+        function createApiHeaders(token) {
+            const headers = new Headers();
+            headers.append('Authorization', `Bearer ${token}`);
+            headers.append('Accept', 'application/vnd.github+json');
+            return headers;
+        }
+
+        async function fetchAllRepos(token) {
+            let allRepos = [];
+            let page = 1;
+            let hasNextPage = true;
+
+            while (hasNextPage) {
+                const apiUrl = `${PROXY_URL}https://api.github.com/user/repos?type=all&per_page=100&page=${page}`;
+                const response = await fetch(apiUrl, {
+                    headers: createApiHeaders(token)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+                }
+
+                const repos = await response.json();
+                if (repos.length === 0) {
+                    hasNextPage = false;
+                } else {
+                    const repoData = repos.map(repo => ({
+                        name: repo.full_name.replace('/', '_'),
+                        url: repo.url 
+                    }));
+                    allRepos = allRepos.concat(repoData);
+                    page++;
+                }
+            }
+            return allRepos;
+        }
+        
+        async function fetchBinary(url, token) {
+            const proxiedUrl = `${PROXY_URL}${url}`;
+            const response = await fetch(proxiedUrl, {
+                headers: createApiHeaders(token)
+            });
+
+            if (!response.ok) {
+                throw new Error(`(${response.status}) Failed to download file`);
+            }
+
+            return await response.blob();
+        }
+
+        function logStatus(message, color = 'gray') {
+            const p = document.createElement('p');
+            p.textContent = `> ${message}`;
+            const colorClasses = {
+                green: 'text-green-400',
+                red: 'text-red-400',
+                yellow: 'text-yellow-400',
+                gray: 'text-gray-400'
+            };
+            p.className = colorClasses[color] || colorClasses['gray'];
+            statusDiv.appendChild(p);
+            statusDiv.scrollTop = statusDiv.scrollHeight;
+        }
+
+        function resetUI() {
+            startBackupBtn.disabled = false;
+            startBackupBtn.textContent = 'Start Backup';
+            spinner.classList.add('hidden');
+        }
+
+        function showToast(message, type = 'green', duration = 4000) {
+            toastMessage.textContent = message;
+            toast.className = 'toast fixed bottom-5 left-1/2 -translate-x-1/2 text-white py-3 px-6 rounded-lg shadow-lg';
+            const typeClasses = {
+                red: 'bg-red-600',
+                yellow: 'bg-yellow-500',
+                green: 'bg-green-600'
+            };
+            toast.classList.add(typeClasses[type] || typeClasses['green']);
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, duration);
+        }
+
+    </script>
+</body>
+</html>
